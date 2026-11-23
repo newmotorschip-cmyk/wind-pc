@@ -429,3 +429,6 @@ WIND responde: identidade correta, nível A1, custo rastreado (US$ 0,00062)
 391/391 testes unitários passando (3 novos: Guardian fix + schema service_cases)
 Sem [GUARDIAN AVISO] espúrio no stderr
 ```
+
+**Commit inicial:** `34fbf25` — 114 arquivos, 14260 inserções  
+Branch: `main` — `git` via GitKraken 2.56.1

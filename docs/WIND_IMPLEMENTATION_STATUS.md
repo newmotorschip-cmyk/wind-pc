@@ -805,3 +805,50 @@ setx GITHUB_TOKEN <seu-token>
 - check_all() agora inclui check_github() ✅
 
 **Marco atingido:** WIND monitora repositórios GitHub proativamente. Repos sem push há mais de 30 dias geram alertas que chegam ao Telegram. Felipe pode listar, inspecionar e criar issues/PRs diretamente pelo chat da WIND.
+
+---
+
+## Fase 15 — Relatórios automáticos + entrega via Telegram
+**Estado:** `testado-dev` — 2026-11-23
+
+| Módulo | Arquivo | Estado |
+|---|---|---|
+| AutoReporter | src/routines/reporter.py | ✅ implementado |
+| Package init routines | src/routines/__init__.py | ✅ atualizado |
+| WeeklySummary seed (WindScheduler) | src/scheduler/scheduler.py | ✅ 4ª tarefa default |
+| Handler weekly_report | src/wind.py | ✅ registrado |
+| Handler morning_summary (via AutoReporter) | src/wind.py | ✅ atualizado |
+| Comandos /resumo-agora + /relatorio-semanal | src/wind.py | ✅ adicionados |
+| Testes Fase 15 (22 testes) | tests/unit/test_phase15.py | ✅ 22/22 passando |
+
+**AutoReporter — métodos:**
+- `send_morning_report() -> str` — gera MorningSummary, entrega via NotificationManager, retorna texto
+- `send_weekly_report() -> str` — gera RetrospectiveGenerator, entrega via NotificationManager, retorna texto
+- `channels_active() -> list[str]` — canais disponíveis (console, file, telegram)
+- `_truncate(text, limit=4000) -> str` — trunca texto respeitando limite do Telegram (4096 chars)
+
+**Scheduler — 4 tarefas default:**
+| ID | Nome | Handler | Schedule |
+|---|---|---|---|
+| backup_daily | Backup diário | backup | daily@03:00 |
+| morning_summary | Resumo matinal | morning_summary | daily@08:00 |
+| proactive_check | Verificação proativa | proactive | interval@3600 |
+| weekly_report | Relatório semanal | weekly_report | weekly@sun@09:00 |
+
+**Novos comandos CLI:**
+```
+/resumo-agora        — alias de /resumo (entrega via Telegram + console + arquivo)
+/relatorio-semanal   — retrospectiva semanal via Telegram
+```
+
+**Validado (2026-11-23):**
+- 549/549 testes unitários passando (22 novos Fase 15, zero regressões) ✅
+- AutoReporter._truncate: texto ≤ limite → inalterado; > limite → corta com "..." ✅
+- send_morning_report: manager.info chamado com título + corpo ✅
+- send_weekly_report: título contém "Semanal" ✅
+- Texto longo (5000-6000 chars): truncado para ≤ 4000 chars ✅
+- WeeklySummary seed: weekly_report presente, schedule weekly@sun@09:00 ✅
+- Seed idempotente com 4 tarefas ✅
+- _handler_morning_summary agora usa AutoReporter → entrega multi-canal ✅
+
+**Marco atingido:** WIND envia automaticamente o resumo matinal e a retrospectiva semanal via Telegram. Os relatórios respeitam o limite de 4000 chars do Telegram. Os handlers estão integrados ao WindScheduler: resumo diário às 08:00 e retrospectiva todo domingo às 09:00.

@@ -54,6 +54,12 @@ _DEFAULT_TASKS: list[dict] = [
         "handler": "proactive",
         "schedule": "interval@3600",
     },
+    {
+        "id": "weekly_report",
+        "name": "Relatório semanal",
+        "handler": "weekly_report",
+        "schedule": "weekly@sun@09:00",
+    },
 ]
 
 

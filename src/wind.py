@@ -33,7 +33,9 @@ Comandos especiais durante a conversa:
   /cal-propostas    — lista propostas de calibração pendentes
   /fw-protocolos    — lista protocolos automotivos (CAN/UDS/KWP/K-Line)
   /fw-bootloaders   — lista perfis de bootloader conhecidos
-  /resumo           — gera resumo matinal de todos os subsistemas
+  /resumo           — resumo matinal (entrega via Telegram + console + arquivo)
+  /resumo-agora     — alias de /resumo
+  /relatorio-semanal — retrospectiva semanal entregue via Telegram
   /notificar X      — envia notificação com texto X para todos os canais
   /falar X          — síntese de voz com texto X (Windows SAPI)
   /api-start        — inicia servidor HTTP da WIND (padrão: porta 8765)
@@ -106,7 +108,9 @@ Comandos disponíveis:
   /cal-propostas    — propostas de calibração pendentes de aprovação
   /fw-protocolos    — protocolos automotivos (CAN, UDS, KWP2000, K-Line, OBD-II)
   /fw-bootloaders   — perfis de bootloader conhecidos por família de ECU
-  /resumo           — resumo matinal de todos os subsistemas
+  /resumo           — resumo matinal (entrega via todos os canais: console, arquivo, Telegram)
+  /resumo-agora     — alias de /resumo
+  /relatorio-semanal — retrospectiva semanal entregue via Telegram
   /notificar X      — envia notificação com texto X (todos os canais disponíveis)
   /falar X          — síntese de voz Windows SAPI com texto X
   /api-start        — inicia servidor HTTP da WIND (porta 8765 padrão)
@@ -195,10 +199,18 @@ def main() -> None:
             print(f"\nWIND [Auto]: Falha no backup — {exc}\n")
 
     def _handler_morning_summary():
-        from src.routines.morning import MorningSummary
+        from src.routines.reporter import AutoReporter
         try:
-            summary_text = MorningSummary(orc).generate()
-            print(f"\n[Rotina matinal automática]\n{summary_text}\n")
+            reporter = AutoReporter(orc, orc.notifications)
+            reporter.send_morning_report()
+        except Exception:
+            pass
+
+    def _handler_weekly_report():
+        from src.routines.reporter import AutoReporter
+        try:
+            reporter = AutoReporter(orc, orc.notifications)
+            reporter.send_weekly_report()
         except Exception:
             pass
 
@@ -212,6 +224,7 @@ def main() -> None:
 
     _scheduler.register_handler("backup", _handler_backup)
     _scheduler.register_handler("morning_summary", _handler_morning_summary)
+    _scheduler.register_handler("weekly_report", _handler_weekly_report)
     _scheduler.register_handler("proactive", _handler_proactive)
 
     # Executar tarefas perdidas enquanto WIND estava desligada
@@ -503,10 +516,18 @@ def main() -> None:
             print()
             continue
 
-        if user_input == "/resumo":
-            from src.routines.morning import MorningSummary
-            summary = MorningSummary(orc).generate()
-            print(f"\n{summary}\n")
+        if user_input in ("/resumo", "/resumo-agora"):
+            from src.routines.reporter import AutoReporter
+            reporter = AutoReporter(orc, orc.notifications)
+            body = reporter.send_morning_report()
+            print(f"\n{body}\n")
+            continue
+
+        if user_input == "/relatorio-semanal":
+            from src.routines.reporter import AutoReporter
+            reporter = AutoReporter(orc, orc.notifications)
+            body = reporter.send_weekly_report()
+            print(f"\n{body}\n")
             continue
 
         if user_input.startswith("/notificar "):

@@ -1,6 +1,8 @@
 """
 WIND 2.0 — Entrypoint CLI
-Uso: python src/wind.py
+Uso: python src/wind.py [--voz]
+
+  --voz    Ativa escuta contínua por wake word "WIND" (requer pyaudio)
 
 Comandos especiais durante a conversa:
   /status           — mostra orçamento, modelos disponíveis e ID de sessão
@@ -42,6 +44,16 @@ Comandos especiais durante a conversa:
   /backups          — lista backups existentes
   /restaurar X      — restaura backup (nome ou índice da lista)
   /migrar           — aplica migrações de banco pendentes
+  /voz              — ativa/desativa escuta por wake word "WIND"
+  /desktop <cmd>    — executa ação no desktop (open_app, git_status, etc.)
+  /git-status [path]— git status do caminho (padrão: diretório atual)
+  /git-commit <msg> — git add -A + commit com mensagem
+  /git-diff         — git diff do diretório atual
+  /ls [path]        — lista arquivos do caminho (padrão: diretório atual)
+  /ler <path>       — lê conteúdo de arquivo
+  /screenshot       — captura a tela e mostra o caminho do arquivo
+  /clipboard        — lê conteúdo da área de transferência
+  /pc-status        — status detalhado do PC (CPU, RAM, disco)
   /sair             — encerra
   /ajuda            — lista comandos
 """
@@ -98,17 +110,43 @@ Comandos disponíveis:
   /curriculo        — currículo de estudo (tópicos pendentes / concluídos)
   /estudar X        — marca tópico (ID) X como em andamento
   /retrospectiva    — retrospectiva dos últimos 7 dias
+  /voz              — ativa/desativa escuta contínua por wake word "WIND"
+  /desktop <cmd>    — executa ação desktop (ex: /desktop open_app browser)
+  /git-status [path]— git status (padrão: diretório atual)
+  /git-commit <msg> — git add -A + commit
+  /git-diff         — git diff do diretório atual
+  /ls [path]        — lista arquivos
+  /ler <path>       — lê conteúdo de arquivo
+  /screenshot       — captura tela
+  /clipboard        — lê área de transferência
+  /pc-status        — status detalhado do PC (CPU, RAM, disco)
   /sair             — encerrar sessão
   /ajuda            — este texto
 """
 
 
 def main() -> None:
+    voice_mode = "--voz" in sys.argv
+
     print(f"\n{'='*50}")
     print(f"  {NAME} {VERSION} — Olá, {OWNER}!")
     print(f"{'='*50}\n")
 
     orc = Orchestrator()
+
+    # Desktop agent compartilhado
+    from src.desktop.agent import DesktopAgent
+    desktop = DesktopAgent(project_root=".")
+
+    # Voice agent (lazy — só inicia se solicitado)
+    _voice_agent = None
+
+    def _get_voice_agent():
+        nonlocal _voice_agent
+        if _voice_agent is None:
+            from src.voice.voice_agent import VoiceAgent
+            _voice_agent = VoiceAgent(orchestrator=orc)
+        return _voice_agent
 
     # Verificar disponibilidade de modelos e avisar
     status = orc.status()
@@ -135,11 +173,21 @@ def main() -> None:
 
     print('Digite sua mensagem. "/ajuda" para comandos.\n')
 
+    # Ativar voz se --voz passado na linha de comando
+    if voice_mode:
+        va = _get_voice_agent()
+        if va.start():
+            print("WIND: Voz ativa. Diga 'WIND' para ativar o microfone.\n")
+        else:
+            print(f"WIND: Voz indisponível.\n{va.install_hint()}\n")
+
     while True:
         try:
             user_input = input("Felipe: ").strip()
         except (KeyboardInterrupt, EOFError):
             print("\n\nAté logo!")
+            if _voice_agent:
+                _voice_agent.stop()
             break
 
         if not user_input:
@@ -648,6 +696,120 @@ def main() -> None:
                 curriculum=orc.curriculum,
             )
             print(f"\n{retro.generate()}\n")
+            continue
+
+        # ── Fase 11: Voz e Autonomia ──────────────────────────────────────
+        if user_input == "/voz":
+            va = _get_voice_agent()
+            if va.running:
+                va.stop()
+                print("WIND: Voz desativada.\n")
+            else:
+                if va.start():
+                    print("WIND: Voz ativa. Diga 'WIND' para ativar o microfone.\n")
+                else:
+                    print(f"WIND: Voz indisponível.\n{va.install_hint()}\n")
+            continue
+
+        if user_input.startswith("/desktop "):
+            parts = user_input[9:].strip().split(None, 1)
+            if not parts:
+                print("WIND: Use: /desktop <comando> [param=valor ...]\n")
+                continue
+            cmd = parts[0]
+            kwargs: dict = {}
+            if len(parts) > 1:
+                for token in parts[1].split():
+                    if "=" in token:
+                        k, v = token.split("=", 1)
+                        kwargs[k] = v
+                    else:
+                        # positional arg → passa como primeiro parâmetro relevante
+                        for key in ("app", "query", "url", "text", "title", "path", "message", "cmd"):
+                            if key not in kwargs:
+                                kwargs[key] = token
+                                break
+            result = desktop.execute(cmd, **kwargs)
+            if result.get("ok"):
+                out = result.get("result") or result.get("output") or result.get("content") or "OK"
+                print(f"WIND: {str(out)[:500]}\n")
+            else:
+                print(f"WIND: Erro — {result.get('error', '?')}\n")
+            continue
+
+        if user_input.startswith("/git-status"):
+            path = user_input[12:].strip() or "."
+            result = desktop.execute("git_status", path=path)
+            print(f"\n{result.get('output', result.get('error', ''))}\n")
+            continue
+
+        if user_input.startswith("/git-commit "):
+            msg = user_input[12:].strip()
+            if not msg:
+                print("WIND: Informe a mensagem de commit.\n")
+                continue
+            result = desktop.execute("git_commit", message=msg, path=".")
+            if result.get("ok"):
+                print(f"WIND: {result.get('output', 'Commit realizado.')}\n")
+            else:
+                print(f"WIND: Erro — {result.get('error')}\n")
+            continue
+
+        if user_input == "/git-diff":
+            result = desktop.execute("git_diff", path=".")
+            diff = result.get("output", "")
+            print(f"\n{diff[:3000] if diff else '(sem alterações)'}\n")
+            continue
+
+        if user_input.startswith("/ls"):
+            path = user_input[3:].strip() or "."
+            result = desktop.execute("list_files", path=path)
+            if result.get("ok"):
+                print(f"\n[{path}]  ({result.get('count', 0)} itens)\n{result.get('output', '')}\n")
+            else:
+                print(f"WIND: {result.get('error')}\n")
+            continue
+
+        if user_input.startswith("/ler "):
+            path = user_input[5:].strip()
+            if not path:
+                print("WIND: Informe o caminho do arquivo.\n")
+                continue
+            result = desktop.execute("read_file", path=path)
+            if result.get("ok"):
+                trunc = " [truncado]" if result.get("truncated") else ""
+                print(f"\n[{path}]{trunc}\n{result['content']}\n")
+            else:
+                print(f"WIND: {result.get('error')}\n")
+            continue
+
+        if user_input == "/screenshot":
+            result = desktop.execute("take_screenshot")
+            if result.get("ok"):
+                print(f"WIND: Screenshot salvo em {result['path']}  ({result.get('size')})\n")
+            else:
+                print(f"WIND: {result.get('error')}\n")
+            continue
+
+        if user_input == "/clipboard":
+            result = desktop.execute("read_clipboard")
+            if result.get("ok"):
+                content = result.get("content", "")
+                print(f"\n[Clipboard — {len(content)} chars]\n{content[:1000]}\n")
+            else:
+                print(f"WIND: {result.get('error')}\n")
+            continue
+
+        if user_input == "/pc-status":
+            result = desktop.execute("get_status")
+            if result.get("ok"):
+                st = result["status"]
+                print(f"\n[Status do PC]")
+                for k, v in st.items():
+                    print(f"  {k:20s}: {v}")
+                print()
+            else:
+                print(f"WIND: {result.get('error')}\n")
             continue
 
         # Processar mensagem normal

@@ -513,6 +513,102 @@ Com ngrok, a URL é automaticamente HTTPS e o microfone funciona normalmente.
 - [ ] Configurar ngrok authtoken para acesso externo
 - [ ] Instalar `psutil` para dados de CPU/RAM: `pip install psutil`
 - [ ] WoL: descobrir MAC do PC (`getmac /v /fo list | findstr "Fisico"`) e anotar aqui
+
+---
+
+## Fase 11 — Instalador nativo + Autonomia completa
+**Estado:** `testado-dev` — 2026-11-23
+
+| Módulo | Arquivo | Estado |
+|---|---|---|
+| DesktopAgent expandido | src/desktop/agent.py | ✅ 11 novos comandos |
+| VoiceListener (STT + wake word) | src/voice/listener.py | ✅ implementado |
+| VoiceAgent (integra Orchestrator) | src/voice/voice_agent.py | ✅ implementado |
+| Package init voice | src/voice/__init__.py | ✅ |
+| Instalador Windows | scripts/install_wind.ps1 | ✅ implementado |
+| Script startup com voz | scripts/start_wind_voice.ps1 | ✅ |
+| CLI — 10 novos comandos | src/wind.py | ✅ atualizado |
+| Testes Fase 11 (25 testes) | tests/unit/test_phase11.py | ✅ 25/25 passando |
+| Fix Guardian: histórico contaminando sessão | src/guardian/validator.py | ✅ corrigido |
+
+**DesktopAgent expandido — novos comandos:**
+
+| Comando | Descrição |
+|---|---|
+| `run_command` | Executa exe da whitelist (git, python, pip, dir, etc.) |
+| `take_screenshot` | Captura tela (salva PNG) |
+| `type_text` | Digita texto na janela ativa (pyautogui) |
+| `focus_window` | Traz janela para frente por título (pygetwindow) |
+| `read_clipboard` | Lê área de transferência |
+| `write_clipboard` | Escreve na área de transferência |
+| `git_status` | git status --short --branch |
+| `git_commit` | git add -A + commit |
+| `git_diff` | git diff (staged ou unstaged) |
+| `list_files` | Lista arquivos de um diretório (glob) |
+| `read_file` | Lê conteúdo de arquivo (máx 1 MB) |
+| `write_file` | Escreve arquivo (apenas em diretórios seguros) |
+
+**VoiceListener — wake word:**
+- Escuta contínua em thread background
+- Wake words: "wind", "hey wind", "ei wind", "vento"
+- Após wake word: escuta até 8s para o comando
+- STT via Google Speech Recognition (pt-BR)
+- Fallback offline: vosk (a instalar com modelo pt-BR)
+
+**VoiceAgent:**
+- Integra VoiceListener + Orchestrator + TTS SAPI
+- Fluxo: microfone → STT → Orchestrator.process() → TTS fala a resposta
+- Hook on_command(text, response) para logging
+- Degradação graciosa: `start()` retorna False sem dependências
+
+**Instalador (`scripts/install_wind.ps1`):**
+1. Verifica Python 3.10+
+2. Instala dependências core (anthropic, openai, psutil, requests)
+3. Instala automação (pyautogui, pyperclip, pygetwindow, SpeechRecognition, pyaudio)
+4. Configura ANTHROPIC_API_KEY / OPENAI_API_KEY / WIND_API_KEY (securo via Read-Host)
+5. Cria pasta `data/`
+6. Cria atalho na área de trabalho
+7. Verifica instalação via health check
+
+**Novos comandos CLI:**
+```
+/voz              ativa/desativa escuta por wake word "WIND"
+/desktop <cmd>    executa ação desktop diretamente
+/git-status       git status do diretório atual
+/git-commit <msg> git add -A + commit
+/git-diff         git diff
+/ls [path]        lista arquivos
+/ler <path>       lê conteúdo de arquivo
+/screenshot       captura tela
+/clipboard        lê área de transferência
+/pc-status        status CPU, RAM, disco
+```
+
+**Para ativar voz:**
+```powershell
+pip install SpeechRecognition pyaudio
+python src/wind.py --voz
+# Ou:
+.\scripts\start_wind_voice.ps1
+```
+
+**Validado (2026-11-23):**
+- 438/438 testes unitários passando (25 novos Fase 11)
+- run_command: whitelist enforced — exe não permitido bloqueado ✅
+- write_file: apenas dentro de safe_dirs ✅
+- VoiceAgent: start() retorna False sem pyaudio ✅
+- VoiceAgent: command hook chamado com (text, response) ✅
+- AuditLog: toda ação desktop registrada em data/audit.jsonl ✅
+- Fix Guardian: SECRET verificado apenas na mensagem atual ✅
+
+**Dependências opcionais (melhoram funcionalidade):**
+```powershell
+pip install pyautogui        # type_text, take_screenshot
+pip install pygetwindow      # focus_window
+pip install pyperclip        # clipboard (fallback ctypes disponível)
+pip install SpeechRecognition pyaudio  # voz nativa
+pip install psutil           # CPU/RAM no get_status
+```
 - [ ] Configurar WoL no BIOS se quiser ligar o PC remotamente
 - [ ] Registrar service worker no index.html (adicionar `<script>if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js')</script>`)
 - [ ] git push para GitHub (executar no terminal do Felipe)

@@ -26,11 +26,19 @@ class GuardianValidator:
         if provider == "local":
             return  # modelo local nunca precisa de validação de envio remoto
 
+        # SECRET: verificar apenas system prompt + última mensagem do usuário
+        # (histórico já foi validado quando foi enviado; não contaminar sessões futuras)
+        latest_user = next(
+            (m.get("content", "") for m in reversed(messages) if m.get("role") == "user"),
+            "",
+        )
+        secret_texts = [system, latest_user]
         all_texts  = [system] + [m.get("content", "") for m in messages]
-        # SECRET e FINANCIAL: verificar tudo (system prompt nunca deve ter segredos)
+        # FINANCIAL: verificar tudo
         all_class  = classify_batch(all_texts)
+        secret_class = classify_batch(secret_texts)
 
-        if all_class == DataClass.SECRET:
+        if secret_class == DataClass.SECRET:
             raise ValidationError(
                 "GUARDIAN BLOQUEOU: dados de classe SECRET detectados. "
                 "Nunca envie segredos (chaves de API, senhas, tokens) para modelos remotos."

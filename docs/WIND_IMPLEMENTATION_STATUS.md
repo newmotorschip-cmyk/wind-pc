@@ -748,3 +748,60 @@ python src/wind.py
 - NotificationManager: com env vars → "telegram" aparece em available_channels() ✅
 
 **Marco atingido:** WIND entrega alertas proativos via Telegram automaticamente. Quando `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` estão configurados, projetos parados, casos abertos antigos e backups vencidos chegam ao iPhone do Felipe sem ele precisar estar na tela do PC.
+
+---
+
+## Fase 14 — Integração GitHub
+**Estado:** `testado-dev` — 2026-11-23
+
+| Módulo | Arquivo | Estado |
+|---|---|---|
+| GitHubClient (REST API) | src/integrations/github.py | ✅ implementado |
+| GitHubRepo + GitHubIssue (dataclasses) | src/integrations/github.py | ✅ |
+| Package init integrations | src/integrations/__init__.py | ✅ |
+| ProactiveMonitor.check_github() | src/scheduler/proactive.py | ✅ atualizado |
+| CLI — 5 novos comandos | src/wind.py | ✅ atualizado |
+| Testes Fase 14 (25 testes) | tests/unit/test_phase14.py | ✅ 25/25 passando |
+
+**GitHubClient — métodos:**
+- `me() -> dict` — usuário autenticado (login, name, etc.)
+- `list_repos(limit) -> list[GitHubRepo]` — repos ordenados por push recente
+- `list_issues(repo, state, limit) -> list[GitHubIssue]` — filtra PRs automaticamente
+- `list_prs(repo, state, limit) -> list[GitHubIssue]` — pull requests
+- `create_issue(repo, title, body) -> dict` — cria issue, retorna number + url
+- `stale_repos(days, limit) -> list[GitHubRepo]` — repos sem push recente
+- `setup_hint() -> str` — instruções para configurar GITHUB_TOKEN
+- Sem dependências novas — usa apenas stdlib urllib + json
+
+**ProactiveMonitor.check_github():**
+- Detecta repositórios sem push há mais de 30 dias (`github_stale`)
+- Severidade `critical` se ≥ 90 dias, `warning` se entre 30-89 dias
+- Degradação graciosa: sem GITHUB_TOKEN → retorna []
+- Integrado em `check_all()` — Telegram recebe alertas de repos inativos
+
+**Configuração:**
+```powershell
+# 1. github.com → Settings → Developer settings → Personal access tokens
+# 2. Criar token com scope: repo (privados) ou public_repo (somente públicos)
+setx GITHUB_TOKEN <seu-token>
+```
+
+**Novos comandos CLI:**
+```
+/github-status                   verifica autenticação e mostra usuário
+/github-repos                    lista até 15 repos (ordenados por push recente)
+/github-issues <owner/repo>      lista issues abertas (exclui PRs)
+/github-prs <owner/repo>         lista pull requests abertas
+/github-criar-issue <repo> <T>   cria issue com título T
+```
+
+**Validado (2026-11-23):**
+- 527/527 testes unitários passando (25 novos Fase 14, zero regressões) ✅
+- GitHubClient: URLError → lista vazia (sem crash) ✅
+- list_issues filtra pull_request corretamente ✅
+- stale_repos: filtra por days_since_push ✅
+- GitHubRepo.summary_line: inclui 🔒 para privados, age em dias ✅
+- check_github: sem token → [], com repos inativos → ProactiveAlert ✅
+- check_all() agora inclui check_github() ✅
+
+**Marco atingido:** WIND monitora repositórios GitHub proativamente. Repos sem push há mais de 30 dias geram alertas que chegam ao Telegram. Felipe pode listar, inspecionar e criar issues/PRs diretamente pelo chat da WIND.

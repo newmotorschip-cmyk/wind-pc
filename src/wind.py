@@ -12,6 +12,11 @@ Comandos especiais durante a conversa:
   /proativo          — executa verificação proativa agora
   /telegram-status   — verifica configuração do Telegram (Fase 13)
   /telegram <msg>    — envia mensagem diretamente pelo Telegram
+  /github-status     — verifica autenticação GitHub (Fase 14)
+  /github-repos      — lista repositórios do usuário
+  /github-issues R   — lista issues abertas do repo R (owner/repo)
+  /github-prs R      — lista pull requests abertas do repo R
+  /github-criar-issue R T — cria issue no repo R com título T
   /status           — mostra orçamento, modelos disponíveis e ID de sessão
   /memoria          — lista últimos itens na memória episódica
   /projetos         — lista projetos ativos
@@ -141,6 +146,11 @@ Comandos disponíveis:
   /proativo          — verificação proativa (projetos, casos, backup)
   /telegram-status   — verifica configuração do Telegram e disponibilidade
   /telegram <msg>    — envia mensagem diretamente pelo Telegram
+  /github-status     — verifica autenticação GitHub
+  /github-repos      — lista repositórios do usuário
+  /github-issues R   — lista issues abertas do repo R (owner/repo)
+  /github-prs R      — lista pull requests abertas do repo R
+  /github-criar-issue R T — cria issue no repo R com título T
   /sair             — encerrar sessão
   /ajuda            — este texto
 """
@@ -951,6 +961,96 @@ def main() -> None:
                 print("WIND: ✅ Mensagem enviada via Telegram.\n")
             else:
                 print("WIND: ❌ Falha ao enviar. Verifique token e chat_id.\n")
+            continue
+
+        # ── Fase 14: GitHub ───────────────────────────────────────────────
+        if user_input == "/github-status":
+            from src.integrations.github import GitHubClient
+            gh = GitHubClient()
+            if gh.is_available():
+                info = gh.me()
+                login = info.get("login", "?")
+                name = info.get("name", "")
+                label = f"{login} ({name})" if name else login
+                print(f"WIND: GitHub ✅ autenticado como {label}.\n")
+            else:
+                print("WIND: GitHub não configurado.\n")
+                print(GitHubClient.setup_hint())
+                print()
+            continue
+
+        if user_input == "/github-repos":
+            from src.integrations.github import GitHubClient
+            gh = GitHubClient()
+            if not gh.is_available():
+                print("WIND: GitHub não configurado. Configure GITHUB_TOKEN.\n")
+                continue
+            repos = gh.list_repos(limit=15)
+            if not repos:
+                print("WIND: Nenhum repositório encontrado.\n")
+            else:
+                print(f"\n[Repositórios GitHub — {len(repos)}]")
+                for r in repos:
+                    print(f"  {r.summary_line()}")
+                print()
+            continue
+
+        if user_input.startswith("/github-issues "):
+            repo = user_input[15:].strip()
+            if not repo or "/" not in repo:
+                print("WIND: Informe owner/repo. Ex: /github-issues newmotorschip-cmyk/wind-pc\n")
+                continue
+            from src.integrations.github import GitHubClient
+            gh = GitHubClient()
+            if not gh.is_available():
+                print("WIND: GitHub não configurado. Configure GITHUB_TOKEN.\n")
+                continue
+            issues = gh.list_issues(repo, limit=20)
+            if not issues:
+                print(f"WIND: Nenhuma issue aberta em {repo}.\n")
+            else:
+                print(f"\n[Issues abertas — {repo} ({len(issues)})]")
+                for i in issues:
+                    print(f"  {i.summary_line()}")
+                print()
+            continue
+
+        if user_input.startswith("/github-prs "):
+            repo = user_input[12:].strip()
+            if not repo or "/" not in repo:
+                print("WIND: Informe owner/repo. Ex: /github-prs newmotorschip-cmyk/wind-pc\n")
+                continue
+            from src.integrations.github import GitHubClient
+            gh = GitHubClient()
+            if not gh.is_available():
+                print("WIND: GitHub não configurado. Configure GITHUB_TOKEN.\n")
+                continue
+            prs = gh.list_prs(repo, limit=20)
+            if not prs:
+                print(f"WIND: Nenhum PR aberto em {repo}.\n")
+            else:
+                print(f"\n[Pull Requests abertos — {repo} ({len(prs)})]")
+                for p in prs:
+                    print(f"  {p.summary_line()}")
+                print()
+            continue
+
+        if user_input.startswith("/github-criar-issue "):
+            parts = user_input[20:].strip().split(None, 1)
+            if len(parts) < 2 or "/" not in parts[0]:
+                print("WIND: Use: /github-criar-issue <owner/repo> <titulo>\n")
+                continue
+            repo, title = parts[0], parts[1]
+            from src.integrations.github import GitHubClient
+            gh = GitHubClient()
+            if not gh.is_available():
+                print("WIND: GitHub não configurado. Configure GITHUB_TOKEN.\n")
+                continue
+            result = gh.create_issue(repo, title)
+            if result.get("number"):
+                print(f"WIND: ✅ Issue #{result['number']} criada → {result.get('html_url')}\n")
+            else:
+                print("WIND: ❌ Falha ao criar issue. Verifique permissões do token.\n")
             continue
 
         # Processar mensagem normal

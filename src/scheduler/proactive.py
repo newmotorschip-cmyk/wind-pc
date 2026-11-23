@@ -115,12 +115,34 @@ class ProactiveMonitor:
         # Sem acesso direto ao context manager — integração via injeção futura
         return []
 
+    def check_github(self, stale_days: int = 30) -> list[ProactiveAlert]:
+        """Verifica repositórios GitHub sem push recente."""
+        try:
+            from src.integrations.github import GitHubClient
+            gh = GitHubClient()
+            if not gh.is_available():
+                return []
+            stale = gh.stale_repos(days=stale_days, limit=30)
+            alerts: list[ProactiveAlert] = []
+            for repo in stale:
+                age = repo.days_since_push() or stale_days
+                severity = "critical" if age >= 90 else "warning"
+                alerts.append(ProactiveAlert(
+                    type="github_stale",
+                    message=f"Repositório '{repo.full_name}' sem push há {age} dias.",
+                    severity=severity,
+                ))
+            return alerts
+        except Exception:
+            return []
+
     def check_all(self) -> list[ProactiveAlert]:
         alerts: list[ProactiveAlert] = []
         alerts.extend(self.check_projects())
         alerts.extend(self.check_cases())
         alerts.extend(self.check_backup())
         alerts.extend(self.check_budget())
+        alerts.extend(self.check_github())
         return alerts
 
     def format_alerts(self, alerts: list[ProactiveAlert]) -> str:

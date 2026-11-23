@@ -852,3 +852,105 @@ setx GITHUB_TOKEN <seu-token>
 - _handler_morning_summary agora usa AutoReporter → entrega multi-canal ✅
 
 **Marco atingido:** WIND envia automaticamente o resumo matinal e a retrospectiva semanal via Telegram. Os relatórios respeitam o limite de 4000 chars do Telegram. Os handlers estão integrados ao WindScheduler: resumo diário às 08:00 e retrospectiva todo domingo às 09:00.
+
+---
+
+## Missão de Recuperação — P0–P6
+**Estado:** `testado-dev` — 2026-11-23
+**Commit:** `5e0acf6` "recuperacao: P1a continuidade sessao, P1b STT real, P2 claude-cli, P4 PWA, P6 ghidra"
+**Testes:** 587/587 passando (38 novos em `tests/unit/test_recovery.py`)
+
+### P0 — Checkpoint git ✅
+- Tag `recovery-checkpoint-20261123` criada antes das mudanças
+- Ponto de restauração seguro em caso de regressão
+
+### P1a — Continuidade de sessão ✅
+
+| Arquivo | Mudança |
+|---|---|
+| `src/core/orchestrator.py` | `_load_episodic_context()` + `_episodic_context` carregado no `__init__` |
+
+- Carrega as últimas 6 interações do `EpisodicMemory` ao iniciar
+- Injeta como bloco `[Histórico de sessões anteriores]` no system prompt
+- Formato: `DD/MM HH:MM Felipe: <texto> / WIND: <texto>`
+- Memória vazia → string vazia → sem overhead
+
+### P1b — STT real (sem stub) ✅
+
+| Arquivo | Mudança |
+|---|---|
+| `src/voice/stt.py` | `STTServiceRecognizer` + `get_best_stt()` |
+| `src/core/orchestrator.py` | `self._stt = get_best_stt()` (era `STTStub()`) |
+
+- `STTServiceRecognizer`: usa `SpeechRecognition` + `PyAudio` (já instalados)
+- `get_best_stt()`: retorna `STTServiceRecognizer` se deps disponíveis, senão `STTStub`
+- Orchestrator.status() agora expõe `stt` e `stt_available`
+- Listener sem microfone real → retorna `None` sem exceção (gracioso)
+
+### P2 — Claude Code CLI wrapper ✅
+
+| Arquivo | Mudança |
+|---|---|
+| `src/adapters/claude_code.py` | `ClaudeCodeCLI` + `_find_claude_binary()` + `get_claude_code()` |
+
+- `_find_claude_binary()`: busca em PATH e caminhos npm globais (Windows/Linux)
+- `ClaudeCodeCLI.run(prompt)`: chama `claude -p <prompt>` via subprocess
+- `get_claude_code()`: retorna `ClaudeCodeCLI` se CLI disponível, senão `ClaudeCodeAdapter` (API)
+- **Status atual:** CLI não instalado (Node.js ausente) → usa `ClaudeCodeAdapter` como fallback
+- Para ativar: instalar Node.js + `npm install -g @anthropic-ai/claude-code`
+
+### P3 — Gateway VPS ⏳ BLOQUEADO
+- Aguardando: IP/credenciais do VPS do Felipe
+- Plano: FastAPI mínimo em `root@<VPS>:8080` com `POST /wol {mac}` → magic packet UDP
+
+### P4 — PWA iPhone (interface completa) ✅
+
+| Arquivo | Mudança |
+|---|---|
+| `web/wind_voice/index.html` | Reescrita completa (~400 linhas) |
+
+**Novos elementos:**
+- `<textarea id="txtInput">` — input de texto com auto-resize
+- `<button id="sendBtn">` — enviar por texto
+- `<button id="micBtn">` — microfone (Web Speech API)
+- 3 abas: Chat / Projetos / Status
+- Aba Projetos: lista projetos do WIND, botão "Continuar"
+- Aba Status: mostra `stt_available`, `autonomy_level`, versão, uptime
+- `sendWoL()`: envia magic packet via VPS URL configurável ou fallback `/desktop wake_on_lan`
+- localStorage key: `wind_cfg2` (schema atualizado com `wolUrl`)
+
+### P5 — Wake-on-LAN hardware ⏳ BLOQUEADO
+- Aguardando: MAC address real do PC + confirmação WoL habilitado no BIOS
+- Código `src/desktop/wol.py` implementado e testado (magic packet 102 bytes correto)
+- Para descobrir MAC: `getmac /v /fo list | findstr "Fisico"` no CMD
+
+### P6 — Ghidra analyzeHeadless ✅
+
+| Arquivo | Mudança |
+|---|---|
+| `src/rev_eng/ghidra_client.py` | `validate_ghidra_install()` + `_find_headless(root)` |
+| `src/wind.py` | Comando `/re-validar-ghidra` |
+
+**Diagnóstico confirmado:**
+- Instalação atual (`C:\Users\Repro\Documents\ghidra_12.1.4_PUBLIC`) é **build de desenvolvimento** (sem `support/analyzeHeadless.bat`)
+- `validate_ghidra_install()`: retorna dict com `ok`, `headless`, `processors_ok`, `message`, `install_hint`
+- Para instalar corretamente: baixar release em https://ghidra-sre.org/ e extrair em `C:\Users\Repro\Documents\ghidra_<versao>_PUBLIC\`
+- Comando `/re-validar-ghidra` mostra diagnóstico completo no CLI
+
+### P7 — Validação instalador Windows ⏳ PENDENTE
+- `scripts/install_wind.ps1` implementado (Fase 11)
+- Validação completa requer reinício do sistema para testar autostart
+- `scripts/start_wind_minimized.ps1` — novo script não commitado ainda
+
+### Resumo de testes da recuperação
+
+| Classe | Testes |
+|---|---|
+| `TestEpisodicContextLoader` (P1a) | 5 |
+| `TestSTTServiceRecognizer` (P1b) | 4 |
+| `TestGetBestSTT` (P1b) | 5 |
+| `TestClaudeCodeCLI` (P2) | 7 |
+| `TestGetClaudeCode` (P2) | 2 |
+| `TestPWA` (P4) | 10 |
+| `TestGhidraValidation` (P6) | 5 |
+| **Total** | **38** |

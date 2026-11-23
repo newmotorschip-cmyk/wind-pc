@@ -612,3 +612,69 @@ pip install psutil           # CPU/RAM no get_status
 - [ ] Configurar WoL no BIOS se quiser ligar o PC remotamente
 - [ ] Registrar service worker no index.html (adicionar `<script>if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js')</script>`)
 - [ ] git push para GitHub (executar no terminal do Felipe)
+
+---
+
+## Fase 12 — Rotinas proativas e agendamento
+**Estado:** `testado-dev` — 2026-11-23
+
+| Módulo | Arquivo | Estado |
+|---|---|---|
+| WindScheduler (SQLite + background thread) | src/scheduler/scheduler.py | ✅ implementado |
+| ProactiveMonitor (projetos, casos, backup) | src/scheduler/proactive.py | ✅ implementado |
+| Package init scheduler | src/scheduler/__init__.py | ✅ |
+| Script autostart Windows | scripts/setup_autostart.ps1 | ✅ |
+| CLI — 5 novos comandos | src/wind.py | ✅ atualizado |
+| Testes Fase 12 (39 testes) | tests/unit/test_phase12.py | ✅ 39/39 passando |
+
+**WindScheduler — arquitetura:**
+- Tarefas persistidas em SQLite: `id`, `name`, `handler`, `schedule`, `params`, `enabled`, `last_run`, `next_run`
+- Formatos de schedule: `daily@HH:MM`, `weekly@DOW@HH:MM`, `interval@SEGUNDOS`
+- Background thread verifica tarefas vencidas a cada 60 s
+- `check_missed()` — ao iniciar a WIND, executa tarefas que venceram enquanto estava desligada
+- Handlers registráveis: `backup`, `morning_summary`, `proactive`
+- Exceções de handlers não propagam para o scheduler
+
+**3 tarefas padrão (seed automático):**
+
+| ID | Nome | Schedule |
+|---|---|---|
+| `backup_daily` | Backup diário | `daily@03:00` |
+| `morning_summary` | Resumo matinal | `daily@08:00` |
+| `proactive_check` | Verificação proativa | `interval@3600` |
+
+**ProactiveMonitor — alertas:**
+- `project_stale` — projeto ativo sem atividade > 7 dias
+- `case_stale` — caso de serviço aberto > 30 dias
+- `backup_overdue` — backup não feito ou > 7 dias
+- Severidades: `info` / `warning` / `critical`
+
+**Novos comandos CLI:**
+```
+/agenda                          lista tarefas agendadas
+/agendar <handler> <schedule>    cria nova tarefa (ex: /agendar backup daily@02:00)
+/desagendar <id>                 desabilita tarefa
+/rodar-agora <id>                executa tarefa imediatamente
+/proativo                        verificação proativa agora
+```
+
+**Script de autostart (`scripts/setup_autostart.ps1`):**
+- Registra a WIND no Agendador de Tarefas do Windows para iniciar ao login
+- Uso: `powershell -ExecutionPolicy Bypass -File scripts\setup_autostart.ps1`
+- Para desfazer: `schtasks /Delete /TN "WIND_AutoStart" /F`
+
+**Comportamento proativo em tempo real:**
+- A cada hora: verifica projetos parados, casos abertos antigos, backup vencido
+- Às 08:00: gera e exibe resumo matinal automaticamente
+- Às 03:00: cria backup automático da base de dados
+- Ao iniciar: catch-up de tarefas perdidas enquanto WIND estava desligada
+
+**Validado (2026-11-23):**
+- 477/477 testes unitários passando (39 novos Fase 12) ✅
+- WindScheduler: seed idempotente, enable/disable, run_now ✅
+- check_missed(): executa apenas tarefas vencidas ✅
+- ProactiveMonitor: project_stale, case_stale, backup_overdue ✅
+- Exceção em handler não propaga para scheduler ✅
+- start()/stop() thread daemon funcional ✅
+
+**Marco atingido:** WIND agora é proativa — executa rotinas automaticamente enquanto está ativa e recupera tarefas perdidas ao reiniciar. Felipe vê alertas de projetos parados, casos abertos e backups vencidos sem precisar perguntar.

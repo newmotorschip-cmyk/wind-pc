@@ -5,6 +5,11 @@ Uso: python src/wind.py [--voz]
   --voz    Ativa escuta contínua por wake word "WIND" (requer pyaudio)
 
 Comandos especiais durante a conversa:
+  /agenda            — lista tarefas agendadas (Fase 12)
+  /agendar H S       — agenda handler H com schedule S (ex: backup daily@02:00)
+  /desagendar <id>   — desabilita tarefa agendada
+  /rodar-agora <id>  — executa tarefa agendada imediatamente
+  /proativo          — executa verificação proativa agora
   /status           — mostra orçamento, modelos disponíveis e ID de sessão
   /memoria          — lista últimos itens na memória episódica
   /projetos         — lista projetos ativos
@@ -54,6 +59,11 @@ Comandos especiais durante a conversa:
   /screenshot       — captura a tela e mostra o caminho do arquivo
   /clipboard        — lê conteúdo da área de transferência
   /pc-status        — status detalhado do PC (CPU, RAM, disco)
+  /agenda            — lista tarefas agendadas
+  /agendar H S       — cria tarefa: handler H, schedule S
+  /desagendar <id>   — desabilita tarefa
+  /rodar-agora <id>  — executa tarefa imediatamente
+  /proativo          — verificação proativa (projetos, casos, backup)
   /sair             — encerra
   /ajuda            — lista comandos
 """
@@ -120,6 +130,11 @@ Comandos disponíveis:
   /screenshot       — captura tela
   /clipboard        — lê área de transferência
   /pc-status        — status detalhado do PC (CPU, RAM, disco)
+  /agenda            — lista tarefas agendadas
+  /agendar H S       — agenda handler H com schedule S
+  /desagendar <id>   — desabilita tarefa agendada
+  /rodar-agora <id>  — executa tarefa imediatamente
+  /proativo          — verificação proativa (projetos, casos, backup)
   /sair             — encerrar sessão
   /ajuda            — este texto
 """
@@ -147,6 +162,48 @@ def main() -> None:
             from src.voice.voice_agent import VoiceAgent
             _voice_agent = VoiceAgent(orchestrator=orc)
         return _voice_agent
+
+    # ── Fase 12: Scheduler + Monitor proativo ─────────────────────────────────
+    from src.scheduler.scheduler import WindScheduler, ScheduledTask as _ScheduledTask
+    from src.scheduler.proactive import ProactiveMonitor
+
+    _scheduler = WindScheduler()
+    _proactive = ProactiveMonitor()
+
+    def _handler_backup():
+        from src.installer.backup import BackupManager
+        try:
+            info = BackupManager(".").create()
+            print(f"\nWIND [Auto]: Backup criado → {info.path.name}\n")
+        except Exception as exc:
+            print(f"\nWIND [Auto]: Falha no backup — {exc}\n")
+
+    def _handler_morning_summary():
+        from src.routines.morning import MorningSummary
+        try:
+            summary_text = MorningSummary(orc).generate()
+            print(f"\n[Rotina matinal automática]\n{summary_text}\n")
+        except Exception:
+            pass
+
+    def _handler_proactive():
+        try:
+            alerts = _proactive.check_all()
+            if alerts:
+                print(f"\n{_proactive.format_alerts(alerts)}\n")
+        except Exception:
+            pass
+
+    _scheduler.register_handler("backup", _handler_backup)
+    _scheduler.register_handler("morning_summary", _handler_morning_summary)
+    _scheduler.register_handler("proactive", _handler_proactive)
+
+    # Executar tarefas perdidas enquanto WIND estava desligada
+    _missed = _scheduler.check_missed()
+    if _missed:
+        print(f"WIND: {_missed} tarefa(s) agendada(s) executadas ao iniciar.\n")
+
+    _scheduler.start()
 
     # Verificar disponibilidade de modelos e avisar
     status = orc.status()
@@ -188,6 +245,7 @@ def main() -> None:
             print("\n\nAté logo!")
             if _voice_agent:
                 _voice_agent.stop()
+            _scheduler.stop()
             break
 
         if not user_input:
@@ -196,6 +254,7 @@ def main() -> None:
         # Comandos especiais
         if user_input == "/sair":
             print("WIND: Até logo!")
+            _scheduler.stop()
             break
 
         if user_input == "/ajuda":
@@ -810,6 +869,48 @@ def main() -> None:
                 print()
             else:
                 print(f"WIND: {result.get('error')}\n")
+            continue
+
+        # ── Fase 12: Agenda ──────────────────────────────────────────────
+        if user_input == "/agenda":
+            print(f"\n{_scheduler.summary()}\n")
+            continue
+
+        if user_input.startswith("/agendar "):
+            parts = user_input[9:].strip().split(None, 1)
+            if len(parts) < 2:
+                print(
+                    "WIND: Use: /agendar <handler> <schedule>\n"
+                    "  Handlers: backup, morning_summary, proactive\n"
+                    "  Schedule:  daily@HH:MM | weekly@DOW@HH:MM | interval@SEGUNDOS\n"
+                )
+                continue
+            handler_name, schedule = parts[0], parts[1].strip()
+            task = _ScheduledTask(id="", name=f"Tarefa {handler_name}",
+                                  handler=handler_name, schedule=schedule)
+            task = _scheduler.add_task(task)
+            print(f"WIND: Tarefa [{task.id}] agendada. Próxima: {task.next_run[:16]}\n")
+            continue
+
+        if user_input.startswith("/desagendar "):
+            tid = user_input[12:].strip()
+            if _scheduler.disable(tid):
+                print(f"WIND: Tarefa '{tid}' desabilitada.\n")
+            else:
+                print(f"WIND: Tarefa '{tid}' não encontrada. Use /agenda para listar.\n")
+            continue
+
+        if user_input.startswith("/rodar-agora "):
+            tid = user_input[13:].strip()
+            if _scheduler.run_now(tid):
+                print(f"WIND: Tarefa '{tid}' executada.\n")
+            else:
+                print(f"WIND: Tarefa '{tid}' não encontrada. Use /agenda para listar.\n")
+            continue
+
+        if user_input == "/proativo":
+            alerts = _proactive.check_all()
+            print(f"\n{_proactive.format_alerts(alerts)}\n")
             continue
 
         # Processar mensagem normal

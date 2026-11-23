@@ -34,23 +34,82 @@ class GhidraResult:
         return self.success and bool(self.project_path)
 
 
-def _find_headless() -> Optional[Path]:
-    """Localiza o analyzeHeadless na instalação do Ghidra."""
-    candidates = [
-        GHIDRA_PATH / "support" / "analyzeHeadless.bat",
-        GHIDRA_PATH / "support" / "analyzeHeadless",
-        GHIDRA_PATH / "analyzeHeadless.bat",
-        GHIDRA_PATH / "analyzeHeadless",
+def _find_headless(ghidra_root: Optional[Path] = None) -> Optional[Path]:
+    """
+    Localiza o script analyzeHeadless na instalação do Ghidra.
+    Tenta vários layouts: release (support/), source, variantes de path.
+    """
+    root = ghidra_root or GHIDRA_PATH
+    candidates: list[Path] = [
+        root / "support" / "analyzeHeadless.bat",
+        root / "support" / "analyzeHeadless",
+        root / "analyzeHeadless.bat",
+        root / "analyzeHeadless",
+        root / "ghidra" / "support" / "analyzeHeadless.bat",
+        root / "ghidra" / "support" / "analyzeHeadless",
     ]
-    # Em Windows 10 o Ghidra 12.x não tem a pasta support — tenta via ghidraRun
-    ghidra_run_candidates = [
-        GHIDRA_PATH / "ghidraRun.bat",
-        GHIDRA_PATH / "ghidra.bat",
-    ]
-    for c in candidates + ghidra_run_candidates:
+    for c in candidates:
         if c.exists():
             return c
     return None
+
+
+def validate_ghidra_install(ghidra_root: Path = GHIDRA_PATH) -> dict:
+    """
+    Valida a instalação do Ghidra e retorna diagnóstico detalhado.
+    Retorna dict com 'ok', 'headless', 'processors_ok', 'message', 'install_hint'.
+    """
+    result: dict = {
+        "ok": False,
+        "root_exists": ghidra_root.exists(),
+        "headless": None,
+        "processors_ok": False,
+        "message": "",
+        "install_hint": (
+            "Para instalar o Ghidra (release):\n"
+            "  1. Baixe em https://ghidra-sre.org/\n"
+            "  2. Extraia em C:\\Users\\Repro\\Documents\\ghidra_<versao>_PUBLIC\\\n"
+            "  3. Verifique que a pasta support\\analyzeHeadless.bat existe\n"
+            "  4. Configure GHIDRA_PATH se necessário:\n"
+            "       setx GHIDRA_PATH \"C:\\seu\\caminho\\ghidra_12.x_PUBLIC\"\n"
+        ),
+    }
+    if not ghidra_root.exists():
+        result["message"] = f"Diretório não encontrado: {ghidra_root}"
+        return result
+
+    # Verifica se é um release (tem support/)
+    support_dir = ghidra_root / "support"
+    headless = _find_headless(ghidra_root)
+    result["headless"] = str(headless) if headless else None
+    result["ok"] = headless is not None
+
+    # Verifica processadores TriCore (essencial para ECUs do acervo)
+    proc_dir = ghidra_root / "Ghidra" / "Processors"
+    result["processors_ok"] = proc_dir.exists()
+    tricore_ok = (proc_dir / "tricore").exists() if proc_dir.exists() else False
+    powerpc_ok = (proc_dir / "PowerPC").exists() if proc_dir.exists() else False
+
+    if headless:
+        result["message"] = f"Ghidra OK: {headless}"
+        if tricore_ok:
+            result["message"] += " | TriCore ✅"
+        if powerpc_ok:
+            result["message"] += " | PowerPC ✅"
+    else:
+        dirs_found = [d.name for d in ghidra_root.iterdir() if d.is_dir()] if ghidra_root.exists() else []
+        if support_dir.exists():
+            result["message"] = (
+                f"Pasta support/ existe mas analyzeHeadless não foi encontrado.\n"
+                f"Arquivos em support/: {list(support_dir.iterdir())[:5]}"
+            )
+        else:
+            result["message"] = (
+                f"Instalação sem support/ (provável build de desenvolvimento, não release).\n"
+                f"Pastas encontradas: {dirs_found}\n"
+                f"Baixe o release oficial em https://ghidra-sre.org/"
+            )
+    return result
 
 
 class GhidraClient:
@@ -68,7 +127,7 @@ class GhidraClient:
         self._ghidra_root = ghidra_root
         self._work_root = work_root
         self._timeout_s = timeout_s
-        self._headless: Optional[Path] = _find_headless()
+        self._headless: Optional[Path] = _find_headless(ghidra_root)
 
     @property
     def is_available(self) -> bool:

@@ -11,7 +11,9 @@ Fase 8: integra DecisionEngine (autonomia A0-A4), NoteManager e Curriculum (apre
 """
 from __future__ import annotations
 
+import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -40,7 +42,7 @@ from ..calibration.manager import CalibrationManager
 from ..firmware.interfaces import FlashInterfaces
 from ..notifications.manager import NotificationManager
 from ..voice.tts import TTSEngine, get_best_engine
-from ..voice.stt import STTStub
+from ..voice.stt import STTEngine, get_best_stt
 from ..finance.analyzer import FinanceAnalyzer
 from ..finance.store import FinanceStore
 from ..autonomy.decision import DecisionStore
@@ -98,7 +100,7 @@ class Orchestrator:
         # Fase 6: Notificações, voz e API
         self._notifications = NotificationManager(db_path=_db)
         self._tts: TTSEngine = get_best_engine()
-        self._stt = STTStub()
+        self._stt: STTEngine = get_best_stt()
         self._api_server = None  # iniciado sob demanda via /api-start
 
         # Fase 7: Finanças (somente leitura)
@@ -118,6 +120,31 @@ class Orchestrator:
             note_manager=self._note_manager,
             curriculum=self._curriculum,
         )
+
+        # Contexto de sessões anteriores — carregado uma vez ao iniciar
+        self._episodic_context: str = self._load_episodic_context()
+
+    def _load_episodic_context(self, limit: int = 6) -> str:
+        """Carrega as últimas N interações da memória episódica para injetar no system prompt."""
+        try:
+            recent = self._episodic.recent(limit)
+            if not recent:
+                return ""
+            lines = ["[Histórico de sessões anteriores]"]
+            for item in reversed(recent):  # mais antigo primeiro
+                try:
+                    content = json.loads(item["content"]) if isinstance(item["content"], str) else item.get("content", {})
+                except (json.JSONDecodeError, TypeError):
+                    content = {}
+                u = str(content.get("user", ""))[:120].strip()
+                w = str(content.get("wind", ""))[:200].strip()
+                ts = datetime.fromtimestamp(float(item.get("created_at", 0))).strftime("%d/%m %H:%M")
+                if u and w:
+                    lines.append(f"  {ts} Felipe: {u}")
+                    lines.append(f"       WIND: {w}")
+            return "\n".join(lines) if len(lines) > 1 else ""
+        except Exception:
+            return ""
 
     @property
     def session_id(self) -> str:
@@ -301,6 +328,8 @@ class Orchestrator:
 
         # 3. Montar system prompt com contexto
         system = SYSTEM_PROMPT
+        if self._episodic_context:
+            system = f"{system}\n\n{self._episodic_context}"
         if sem_context:
             system = f"{system}\n\n{sem_context}"
         if project_context:
@@ -383,6 +412,8 @@ class Orchestrator:
             "open_cases": len(self._cases.list_open()),
             "api": self.api_status(),
             "tts": self._tts.name(),
+            "stt": self._stt.name(),
+            "stt_available": self._stt.is_available(),
             "notifications": self._notifications.available_channels(),
             "autonomy_level": self._autonomy_profile.current_level.value,
             "pending_decisions": len(self._decision_store.list_pending()),

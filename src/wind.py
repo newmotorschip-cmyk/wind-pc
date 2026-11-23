@@ -459,6 +459,21 @@ def main() -> None:
             print(f"\n{matrix_report(GHIDRA_PATH)}\n")
             continue
 
+        if user_input == "/re-validar-ghidra":
+            from src.rev_eng.ghidra_client import validate_ghidra_install, GHIDRA_PATH as _GP
+            info = validate_ghidra_install(_GP)
+            status = "✅" if info["ok"] else "❌"
+            print(f"\n[Validação Ghidra] {status}")
+            print(f"  Caminho:    {_GP}")
+            print(f"  Raiz existe: {'sim' if info['root_exists'] else 'não'}")
+            print(f"  Headless:   {info['headless'] or 'não encontrado'}")
+            print(f"  Processors: {'sim' if info['processors_ok'] else 'não'}")
+            print(f"  Diagnóstico: {info['message']}")
+            if not info["ok"]:
+                print(f"\n  Como instalar:\n{info['install_hint']}")
+            print()
+            continue
+
         if user_input == "/cal-familias":
             families = orc.calibration.families()
             print(f"\n[Famílias de ECU conhecidas — {len(families)}]")

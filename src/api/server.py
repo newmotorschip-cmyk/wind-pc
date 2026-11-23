@@ -8,16 +8,20 @@ Rotas:
   GET  /cases       — casos em aberto
   GET  /missions    — missões ativas
   GET  /proposals   — propostas de calibração pendentes
+  GET  /app/*       — serve PWA iPhone (web/wind_voice/)
   POST /chat        — {"message": "..."} → {"response": "..."}
   POST /notify      — {"text": "..."} → registra notificação
+  POST /desktop     — {"command": "open_app", "app": "claude"} → executa ação no PC
 """
 from __future__ import annotations
 
 import hmac
 import json
+import mimetypes
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from typing import Any, Optional
 
 
@@ -25,6 +29,8 @@ class WindRequestHandler(BaseHTTPRequestHandler):
     # Shared state — definido antes de iniciar o servidor
     _orchestrator: Any = None
     _api_key: str = ""
+    _desktop_agent: Any = None   # DesktopAgent (inicializado junto com o servidor)
+    _pwa_root: Path = Path(__file__).parent.parent.parent / "web" / "wind_voice"
 
     # ── Auth ──────────────────────────────────────────────────────────────────
 
@@ -55,6 +61,8 @@ class WindRequestHandler(BaseHTTPRequestHandler):
         handler = handlers.get(path)
         if handler:
             handler()
+        elif path.startswith("/app"):
+            self._handle_pwa(path)
         else:
             self._send_json({"error": f"rota '{path}' não encontrada"}, 404)
 
@@ -63,8 +71,9 @@ class WindRequestHandler(BaseHTTPRequestHandler):
             return
         path = self.path.split("?")[0]
         handlers = {
-            "/chat":   self._handle_chat,
-            "/notify": self._handle_notify,
+            "/chat":    self._handle_chat,
+            "/notify":  self._handle_notify,
+            "/desktop": self._handle_desktop,
         }
         handler = handlers.get(path)
         if handler:
@@ -149,6 +158,44 @@ class WindRequestHandler(BaseHTTPRequestHandler):
             return
         self._send_json({"ok": True, "notified": text})
 
+    def _handle_desktop(self) -> None:
+        agent = self.__class__._desktop_agent
+        if agent is None:
+            self._send_json({"ok": False, "error": "desktop agent não inicializado"}, 503)
+            return
+        body = self._read_body()
+        command = body.get("command", "").strip()
+        if not command:
+            self._send_json({"ok": False, "error": "campo 'command' obrigatório"}, 400)
+            return
+        kwargs = {k: v for k, v in body.items() if k != "command"}
+        result = agent.execute(command, **kwargs)
+        self._send_json(result)
+
+    def _handle_pwa(self, path: str) -> None:
+        """Serve os arquivos estáticos do PWA iPhone (web/wind_voice/)."""
+        pwa_root = self.__class__._pwa_root
+        # /app/ → index.html, /app/foo.js → foo.js
+        rel = path[len("/app"):].lstrip("/") or "index.html"
+        file_path = pwa_root / rel
+        try:
+            if not file_path.resolve().is_relative_to(pwa_root.resolve()):
+                self._send_json({"error": "acesso negado"}, 403)
+                return
+            if not file_path.exists():
+                self._send_json({"error": "arquivo não encontrado"}, 404)
+                return
+            mime, _ = mimetypes.guess_type(str(file_path))
+            mime = mime or "application/octet-stream"
+            data = file_path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", mime)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception as exc:
+            self._send_json({"error": str(exc)}, 500)
+
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _read_body(self) -> dict:
@@ -195,6 +242,11 @@ class WindAPIServer:
         self._thread: Optional[threading.Thread] = None
         WindRequestHandler._api_key = api_key or os.getenv("WIND_API_KEY", "")
         WindRequestHandler._orchestrator = orchestrator
+        try:
+            from ..desktop.agent import DesktopAgent
+            WindRequestHandler._desktop_agent = DesktopAgent()
+        except Exception:
+            WindRequestHandler._desktop_agent = None
 
     def start(self) -> int:
         """Inicia em background. Retorna a porta efetiva (útil quando port=0)."""

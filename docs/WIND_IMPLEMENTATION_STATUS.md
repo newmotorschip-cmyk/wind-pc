@@ -432,3 +432,87 @@ Sem [GUARDIAN AVISO] espúrio no stderr
 
 **Commit inicial:** `34fbf25` — 114 arquivos, 14260 inserções  
 Branch: `main` — `git` via GitKraken 2.56.1
+
+---
+
+## Fase 10 — App iPhone com voz + controle remoto do PC
+**Estado:** `testado-dev` — 2026-11-23
+
+| Módulo | Arquivo | Estado |
+|---|---|---|
+| Desktop Agent (Windows) | src/desktop/agent.py | ✅ implementado |
+| Wake-on-LAN | src/desktop/wol.py | ✅ implementado |
+| Package init desktop | src/desktop/__init__.py | ✅ |
+| API: rota /desktop | src/api/server.py | ✅ estendido |
+| API: rota /app/ (serve PWA) | src/api/server.py | ✅ estendido |
+| PWA iPhone — interface de voz | web/wind_voice/index.html | ✅ implementado |
+| PWA manifest | web/wind_voice/manifest.json | ✅ |
+| PWA service worker | web/wind_voice/sw.js | ✅ |
+| Script startup simples | scripts/start_wind.bat | ✅ |
+| Script startup + ngrok | scripts/start_wind_ngrok.ps1 | ✅ |
+| WoL para VPS | scripts/wol_from_vps.py | ✅ |
+| Testes Fase 10 (22 testes) | tests/unit/test_desktop.py | ✅ 22/22 passando |
+
+**Arquitetura:**
+
+**DesktopAgent** — 5 comandos whitelistados (nunca código arbitrário):
+- `open_app`: abre Claude Code, Codex, terminal, explorer, notepad, browser
+- `search_web`: pesquisa no Google (URL gerada com `urllib.parse.quote_plus`)
+- `open_url`: abre URL em qualquer browser (somente http:// e https://)
+- `get_status`: retorna CPU%, RAM disponível (psutil opcional), nome do PC
+- `wake_screen`: move mouse 1px para acordar proteção de tela (ctypes Windows)
+
+**API /desktop** — recebe `{"command": "...", "app": "..."}` via POST autenticado:
+```
+POST /desktop
+X-API-Key: <WIND_API_KEY>
+{"command": "open_app", "app": "claude"}
+→ {"ok": true, "result": "Claude sendo aberto..."}
+```
+
+**API /app/** — serve os arquivos do PWA diretamente pelo WIND API server:
+```
+GET http://<IP>:8765/app/
+→ Abre o PWA no Safari do iPhone
+```
+
+**PWA iPhone (`web/wind_voice/index.html`):**
+- Interface de voz push-to-talk (microfone grande)
+- STT: `webkitSpeechRecognition` em pt-BR (requer HTTPS no iOS Safari)
+- TTS: `SpeechSynthesisUtterance` em pt-BR (funciona em HTTP + HTTPS)
+- Botões de ação rápida: Claude Code, Codex, Pesquisar, Status PC, Status WIND, Acordar tela
+- Configuração por tela de settings (URL + API Key salvos em localStorage)
+- Indicador de status (verde = conectado, vermelho = erro)
+- "Adicionar à Tela de Início" para ícone no iPhone
+- Design dark, mobile-first, safe-area aware para iPhone com notch
+
+**Wake-on-LAN:**
+- Magic packet: 6×0xFF + 16 repetições do MAC (102 bytes total)
+- `scripts/wol_from_vps.py`: rodar no VPS para ligar o PC remotamente
+- Pré-requisitos: WoL habilitado no BIOS + roteador encaminhando UDP porta 9
+
+**Acesso pelo iPhone:**
+1. Mesma rede Wi-Fi: `http://192.168.X.Y:8765/app/` (URL local do PC)
+2. Rede externa: usar ngrok → `start_wind_ngrok.ps1` exibe a URL https://xxxx.ngrok-free.app
+
+**Nota sobre STT e HTTPS:**  
+O `webkitSpeechRecognition` do iOS Safari exige HTTPS para microfone.  
+Na rede local sem HTTPS, a interface exibe "Voz requer HTTPS. Use texto ou ngrok."  
+Com ngrok, a URL é automaticamente HTTPS e o microfone funciona normalmente.
+
+**Validado (2026-11-23):**
+- 413/413 testes unitários passando (22 novos: DesktopAgent + WoL)
+- DesktopAgent: open_app rejeita apps não permitidos ✅
+- DesktopAgent: search_web gera URL Google correta ✅
+- DesktopAgent: open_url rejeita FTP, javascript:, vazio ✅
+- WoL: magic packet 102 bytes, estrutura correta ✅
+- MAC parser: aceita AA:BB, AA-BB, lowercase; rejeita formato inválido ✅
+
+**Pendências (pré-produção):**
+- [ ] Testar acesso real do iPhone (endereço IP local do Felipe)
+- [ ] Configurar ngrok authtoken para acesso externo
+- [ ] Instalar `psutil` para dados de CPU/RAM: `pip install psutil`
+- [ ] WoL: descobrir MAC do PC (`getmac /v /fo list | findstr "Fisico"`) e anotar aqui
+- [ ] Configurar WoL no BIOS se quiser ligar o PC remotamente
+- [ ] Registrar service worker no index.html (adicionar `<script>if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js')</script>`)
+- [ ] git push para GitHub (executar no terminal do Felipe)

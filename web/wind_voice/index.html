@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="WIND">
+<meta name="theme-color" content="#0a0a0a">
+<title>WIND</title>
+<link rel="manifest" href="manifest.json">
+<style>
+:root {
+  --bg:     #0a0a0a;
+  --bg2:    #161616;
+  --bg3:    #222;
+  --text:   #f0f0ef;
+  --text2:  #666;
+  --accent: #4a9eff;
+  --mic-on: #ff4a4a;
+  --ok:     #4ade80;
+  --r:      env(safe-area-inset-right, 0px);
+  --l:      env(safe-area-inset-left, 0px);
+  --t:      env(safe-area-inset-top, 0px);
+  --b:      env(safe-area-inset-bottom, 0px);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,system-ui,sans-serif;overflow:hidden}
+body{display:flex;flex-direction:column;padding-top:var(--t);padding-bottom:var(--b);padding-left:var(--l);padding-right:var(--r)}
+
+/* ── Header ── */
+.hdr{display:flex;align-items:center;gap:10px;padding:12px 16px 8px}
+.logo{font-size:18px;font-weight:700;letter-spacing:3px;color:var(--accent)}
+.dot{width:7px;height:7px;border-radius:50%;background:#333;flex-shrink:0}
+.dot.on{background:var(--ok)}
+.dot.err{background:#ff4a4a}
+.hdr-spacer{flex:1}
+.icon-btn{background:none;border:none;color:var(--text2);font-size:18px;cursor:pointer;padding:6px;border-radius:8px}
+.icon-btn:active{background:#222}
+
+/* ── Messages ── */
+.msgs{flex:1;overflow-y:auto;padding:4px 14px;display:flex;flex-direction:column;gap:6px;-webkit-overflow-scrolling:touch}
+.msg{max-width:88%;padding:9px 13px;border-radius:16px;font-size:15px;line-height:1.45;word-break:break-word}
+.msg.user{background:var(--accent);color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
+.msg.wind{background:var(--bg2);align-self:flex-start;border-bottom-left-radius:4px}
+.msg.sys{align-self:center;background:none;color:var(--text2);font-size:12px;padding:2px 0}
+.msg.err{background:#2a0808;color:#ff7a7a;align-self:flex-start;border-bottom-left-radius:4px}
+
+/* ── Quick actions ── */
+.actions{display:flex;gap:7px;padding:8px 14px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.actions::-webkit-scrollbar{display:none}
+.act{flex-shrink:0;background:var(--bg3);border:1px solid #2a2a2a;color:var(--text);border-radius:18px;padding:5px 13px;font-size:13px;cursor:pointer;white-space:nowrap}
+.act:active{background:#2a2a2a}
+
+/* ── Mic area ── */
+.mic-wrap{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 16px 14px}
+.interim{font-size:13px;color:var(--text2);font-style:italic;min-height:16px;text-align:center;padding:0 20px}
+.mic-btn{width:68px;height:68px;border-radius:50%;background:var(--bg2);border:1.5px solid #2a2a2a;color:var(--text2);font-size:28px;cursor:pointer;display:flex;align-items:center;justify-content:center;position:relative;transition:border-color .15s,background .15s}
+.mic-btn.on{background:#2a0000;border-color:var(--mic-on);color:var(--mic-on)}
+.mic-btn.on::after{content:'';position:absolute;inset:-8px;border-radius:50%;border:1.5px solid var(--mic-on);opacity:.4;animation:ring 1.2s ease-in-out infinite}
+@keyframes ring{0%,100%{transform:scale(1);opacity:.4}50%{transform:scale(1.08);opacity:.2}}
+.mic-hint{font-size:12px;color:var(--text2)}
+
+/* ── Settings modal ── */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:50;align-items:flex-end}
+.overlay.show{display:flex}
+.sheet{background:var(--bg2);width:100%;border-radius:20px 20px 0 0;padding:24px 20px;padding-bottom:calc(var(--b) + 20px);max-height:80vh;overflow-y:auto}
+.sheet-title{font-size:16px;font-weight:600;margin-bottom:20px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12px;color:var(--text2);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px}
+.field input{width:100%;background:var(--bg);border:1px solid #2a2a2a;border-radius:10px;color:var(--text);padding:11px 12px;font-size:15px;outline:none}
+.field input:focus{border-color:var(--accent)}
+.btn-primary{width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:600;cursor:pointer;margin-top:4px}
+.btn-primary:active{opacity:.85}
+.hint{font-size:12px;color:var(--text2);margin-top:8px;line-height:1.5}
+
+/* ── WoL section in settings ── */
+.section-title{font-size:13px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin:20px 0 12px}
+.wol-btn{width:100%;background:var(--bg3);border:1px solid #333;color:var(--text);border-radius:12px;padding:12px;font-size:15px;cursor:pointer;margin-bottom:8px}
+.wol-btn:active{background:#222}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <span class="logo">WIND</span>
+  <div id="dot" class="dot"></div>
+  <div class="hdr-spacer"></div>
+  <button class="icon-btn" onclick="openSettings()" aria-label="Configurações">⚙</button>
+</div>
+
+<div class="msgs" id="msgs">
+  <div class="msg sys">Bem-vindo. Configure o servidor em ⚙ e toque no microfone.</div>
+</div>
+
+<div class="actions">
+  <button class="act" onclick="openApp('claude')">Claude Code</button>
+  <button class="act" onclick="openApp('codex')">Codex</button>
+  <button class="act" onclick="doSearch()">🔍 Pesquisar</button>
+  <button class="act" onclick="getStatus()">📊 Status PC</button>
+  <button class="act" onclick="windStatus()">ℹ WIND</button>
+  <button class="act" onclick="wakeScreen()">💡 Acordar tela</button>
+</div>
+
+<div class="mic-wrap">
+  <div class="interim" id="interim"></div>
+  <button class="mic-btn" id="micBtn" onclick="toggleMic()" aria-label="Microfone">🎤</button>
+  <div class="mic-hint" id="micHint">Toque para falar</div>
+</div>
+
+<!-- Settings sheet -->
+<div class="overlay" id="overlay" onclick="if(event.target===this)closeSettings()">
+  <div class="sheet">
+    <div class="sheet-title">Configurações WIND</div>
+
+    <div class="field">
+      <label>URL do servidor (IP:porta)</label>
+      <input id="cfgUrl" type="url" inputmode="url" placeholder="http://192.168.1.100:8765" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
+    </div>
+    <div class="field">
+      <label>WIND API Key</label>
+      <input id="cfgKey" type="password" placeholder="••••••••••••••••" autocomplete="off">
+    </div>
+    <button class="btn-primary" onclick="saveSettings()">Salvar e conectar</button>
+    <div class="hint">Dica: na mesma rede Wi-Fi, use o IP local do PC (ex: 192.168.1.100). Para acesso externo, use o túnel ngrok.</div>
+
+    <div class="section-title">Wake-on-LAN (ligar PC)</div>
+    <div class="field">
+      <label>MAC address do PC</label>
+      <input id="cfgMac" type="text" placeholder="AA:BB:CC:DD:EE:FF" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
+    </div>
+    <div class="field">
+      <label>Endereço de broadcast</label>
+      <input id="cfgBcast" type="text" placeholder="192.168.1.255" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
+    </div>
+    <div class="hint">Para ligar o PC remotamente, o roteador precisa encaminhar UDP porta 9 para o endereço broadcast da rede.</div>
+  </div>
+</div>
+
+<script>
+// ── Configuração ───────────────────────────────────────────────────────────
+let cfg = {url: '', key: '', mac: '', bcast: '255.255.255.255'};
+
+function loadCfg() {
+  try {
+    const s = localStorage.getItem('wind_cfg');
+    if (s) Object.assign(cfg, JSON.parse(s));
+  } catch(e){}
+  if (!cfg.url) setTimeout(openSettings, 400);
+  else checkStatus();
+}
+
+function openSettings() {
+  document.getElementById('cfgUrl').value  = cfg.url;
+  document.getElementById('cfgKey').value  = cfg.key;
+  document.getElementById('cfgMac').value  = cfg.mac;
+  document.getElementById('cfgBcast').value = cfg.bcast;
+  document.getElementById('overlay').classList.add('show');
+}
+
+function closeSettings() {
+  document.getElementById('overlay').classList.remove('show');
+}
+
+function saveSettings() {
+  cfg.url   = document.getElementById('cfgUrl').value.replace(/\/+$/, '');
+  cfg.key   = document.getElementById('cfgKey').value;
+  cfg.mac   = document.getElementById('cfgMac').value;
+  cfg.bcast = document.getElementById('cfgBcast').value || '255.255.255.255';
+  try { localStorage.setItem('wind_cfg', JSON.stringify(cfg)); } catch(e){}
+  closeSettings();
+  checkStatus();
+}
+
+// ── Status ─────────────────────────────────────────────────────────────────
+async function checkStatus() {
+  if (!cfg.url || !cfg.key) return;
+  const dot = document.getElementById('dot');
+  try {
+    const r = await fetch(`${cfg.url}/status`, {headers: {'X-API-Key': cfg.key}, signal: AbortSignal.timeout(5000)});
+    dot.className = r.ok ? 'dot on' : 'dot err';
+  } catch(e) {
+    dot.className = 'dot err';
+  }
+}
+setInterval(checkStatus, 30000);
+
+// ── Mensagens ──────────────────────────────────────────────────────────────
+function addMsg(role, text) {
+  const el = document.createElement('div');
+  el.className = 'msg ' + role;
+  el.textContent = text;
+  const c = document.getElementById('msgs');
+  c.appendChild(el);
+  c.scrollTop = c.scrollHeight;
+  return el;
+}
+
+// ── API helpers ────────────────────────────────────────────────────────────
+async function api(path, body) {
+  if (!cfg.url || !cfg.key) { openSettings(); throw new Error('sem configuração'); }
+  const opts = {headers: {'X-API-Key': cfg.key}, signal: AbortSignal.timeout(30000)};
+  if (body) {
+    opts.method = 'POST';
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  const r = await fetch(cfg.url + path, opts);
+  return r.json();
+}
+
+// ── Chat com voz ───────────────────────────────────────────────────────────
+async function sendMessage(text) {
+  if (!text.trim()) return;
+  addMsg('user', text);
+  setHint('Aguardando WIND...');
+  try {
+    const d = await api('/chat', {message: text});
+    const reply = d.response || d.error || 'Erro na resposta';
+    addMsg('wind', reply);
+    tts(reply);
+  } catch(e) {
+    addMsg('err', '⚠ ' + e.message);
+  }
+  setHint('Toque para falar');
+}
+
+// ── Ações de desktop ───────────────────────────────────────────────────────
+async function openApp(app) {
+  addMsg('sys', `Abrindo ${app}...`);
+  try {
+    const d = await api('/desktop', {command: 'open_app', app});
+    const msg = d.ok ? d.result : (d.error || 'Erro');
+    addMsg(d.ok ? 'wind' : 'err', msg);
+    if (d.ok) tts(msg);
+  } catch(e) { addMsg('err', '⚠ ' + e.message); }
+}
+
+async function doSearch() {
+  const q = prompt('O que pesquisar?');
+  if (!q) return;
+  addMsg('user', 'Pesquisar: ' + q);
+  try {
+    const d = await api('/desktop', {command: 'search_web', query: q});
+    addMsg(d.ok ? 'wind' : 'err', d.ok ? d.result : d.error);
+  } catch(e) { addMsg('err', '⚠ ' + e.message); }
+}
+
+async function getStatus() {
+  try {
+    const d = await api('/desktop', {command: 'get_status'});
+    if (d.ok) {
+      const s = d.status;
+      const msg = `${s.pc} — CPU ${s.cpu_percent ?? '?'}% | RAM livre ${s.mem_avail_gb ?? '?'}GB`;
+      addMsg('wind', msg);
+      tts(msg);
+    } else {
+      addMsg('err', d.error);
+    }
+  } catch(e) { addMsg('err', '⚠ ' + e.message); }
+}
+
+async function wakeScreen() {
+  try {
+    const d = await api('/desktop', {command: 'wake_screen'});
+    addMsg(d.ok ? 'wind' : 'err', d.ok ? d.result : d.error);
+  } catch(e) { addMsg('err', '⚠ ' + e.message); }
+}
+
+async function windStatus() {
+  await sendMessage('/status');
+}
+
+// ── TTS ────────────────────────────────────────────────────────────────────
+function tts(text) {
+  if (!window.speechSynthesis || text.length > 350) return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'pt-BR';
+  u.rate = 1.05;
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(u);
+}
+
+// ── STT ────────────────────────────────────────────────────────────────────
+let recog = null;
+let isListening = false;
+
+function setupSTT() {
+  const API = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!API) {
+    setHint('Voz requer HTTPS. Use texto ou ngrok.');
+    return false;
+  }
+  recog = new API();
+  recog.lang = 'pt-BR';
+  recog.continuous = false;
+  recog.interimResults = true;
+  recog.onresult = e => {
+    const parts = Array.from(e.results).map(r => r[0].transcript).join('');
+    document.getElementById('interim').textContent = parts;
+    if (e.results[e.results.length - 1].isFinal) {
+      document.getElementById('interim').textContent = '';
+      stopListening();
+      if (parts.trim()) sendMessage(parts.trim());
+    }
+  };
+  recog.onerror = e => {
+    stopListening();
+    if (e.error !== 'no-speech' && e.error !== 'aborted')
+      addMsg('err', 'STT: ' + e.error);
+  };
+  recog.onend = () => stopListening();
+  return true;
+}
+
+function toggleMic() {
+  if (!cfg.url || !cfg.key) { openSettings(); return; }
+  if (!recog && !setupSTT()) return;
+  isListening ? stopListening() : startListening();
+}
+
+function startListening() {
+  isListening = true;
+  document.getElementById('micBtn').classList.add('on');
+  setHint('Ouvindo...');
+  try { recog.start(); } catch(e) { stopListening(); }
+}
+
+function stopListening() {
+  isListening = false;
+  document.getElementById('micBtn').classList.remove('on');
+  document.getElementById('interim').textContent = '';
+  setHint('Toque para falar');
+  try { recog.stop(); } catch(e){}
+}
+
+function setHint(t) { document.getElementById('micHint').textContent = t; }
+
+// ── Boot ───────────────────────────────────────────────────────────────────
+loadCfg();
+setupSTT();
+</script>
+</body>
+</html>

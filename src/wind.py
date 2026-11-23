@@ -10,6 +10,8 @@ Comandos especiais durante a conversa:
   /desagendar <id>   — desabilita tarefa agendada
   /rodar-agora <id>  — executa tarefa agendada imediatamente
   /proativo          — executa verificação proativa agora
+  /telegram-status   — verifica configuração do Telegram (Fase 13)
+  /telegram <msg>    — envia mensagem diretamente pelo Telegram
   /status           — mostra orçamento, modelos disponíveis e ID de sessão
   /memoria          — lista últimos itens na memória episódica
   /projetos         — lista projetos ativos
@@ -64,6 +66,8 @@ Comandos especiais durante a conversa:
   /desagendar <id>   — desabilita tarefa
   /rodar-agora <id>  — executa tarefa imediatamente
   /proativo          — verificação proativa (projetos, casos, backup)
+  /telegram-status   — verifica configuração do Telegram
+  /telegram <msg>    — envia mensagem diretamente pelo Telegram
   /sair             — encerra
   /ajuda            — lista comandos
 """
@@ -135,6 +139,8 @@ Comandos disponíveis:
   /desagendar <id>   — desabilita tarefa agendada
   /rodar-agora <id>  — executa tarefa imediatamente
   /proativo          — verificação proativa (projetos, casos, backup)
+  /telegram-status   — verifica configuração do Telegram e disponibilidade
+  /telegram <msg>    — envia mensagem diretamente pelo Telegram
   /sair             — encerrar sessão
   /ajuda            — este texto
 """
@@ -187,10 +193,10 @@ def main() -> None:
             pass
 
     def _handler_proactive():
+        from src.scheduler.delivery import ProactiveDelivery
         try:
-            alerts = _proactive.check_all()
-            if alerts:
-                print(f"\n{_proactive.format_alerts(alerts)}\n")
+            delivery = ProactiveDelivery(_proactive, orc.notifications)
+            delivery.run()
         except Exception:
             pass
 
@@ -909,8 +915,42 @@ def main() -> None:
             continue
 
         if user_input == "/proativo":
-            alerts = _proactive.check_all()
-            print(f"\n{_proactive.format_alerts(alerts)}\n")
+            from src.scheduler.delivery import ProactiveDelivery
+            delivery = ProactiveDelivery(_proactive, orc.notifications)
+            text = delivery.run_and_report()
+            print(f"\n{text}\n")
+            continue
+
+        # ── Fase 13: Telegram ─────────────────────────────────────────────
+        if user_input == "/telegram-status":
+            from src.notifications.channel import TelegramStub
+            tg = TelegramStub()
+            if tg.is_available():
+                print("WIND: Telegram ✅ configurado.")
+                print(f"  Chat ID: {tg._chat_id}")
+                print("  Use '/telegram Olá!' para enviar uma mensagem.\n")
+            else:
+                print("WIND: Telegram não configurado.\n")
+                print(TelegramStub.setup_hint())
+                print()
+            continue
+
+        if user_input.startswith("/telegram "):
+            text = user_input[10:].strip()
+            if not text:
+                print("WIND: Informe o texto. Ex: /telegram Olá do WIND!\n")
+                continue
+            from src.notifications.channel import TelegramStub
+            tg = TelegramStub()
+            if not tg.is_available():
+                print("WIND: Telegram não configurado.\n")
+                print(TelegramStub.setup_hint())
+                print()
+                continue
+            if tg.send_text(text):
+                print("WIND: ✅ Mensagem enviada via Telegram.\n")
+            else:
+                print("WIND: ❌ Falha ao enviar. Verifique token e chat_id.\n")
             continue
 
         # Processar mensagem normal

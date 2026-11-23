@@ -678,3 +678,73 @@ pip install psutil           # CPU/RAM no get_status
 - start()/stop() thread daemon funcional ✅
 
 **Marco atingido:** WIND agora é proativa — executa rotinas automaticamente enquanto está ativa e recupera tarefas perdidas ao reiniciar. Felipe vê alertas de projetos parados, casos abertos e backups vencidos sem precisar perguntar.
+
+---
+
+## Fase 13 — Telegram real + ProactiveDelivery
+**Estado:** `testado-dev` — 2026-11-23
+
+| Módulo | Arquivo | Estado |
+|---|---|---|
+| TelegramStub — `send_text()`, `test_send()`, `setup_hint()` | src/notifications/channel.py | ✅ atualizado |
+| Alias `TelegramChannel = TelegramStub` | src/notifications/channel.py | ✅ |
+| ProactiveDelivery (ponte Monitor → Manager) | src/scheduler/delivery.py | ✅ implementado |
+| Package init scheduler (ProactiveDelivery) | src/scheduler/__init__.py | ✅ atualizado |
+| CLI — 2 novos comandos | src/wind.py | ✅ atualizado |
+| Testes Fase 13 (25 testes) | tests/unit/test_phase13.py | ✅ 25/25 passando |
+
+**TelegramChannel — novos métodos:**
+- `send_text(text: str) -> bool` — envia texto puro sem objeto Notification
+- `test_send() -> bool` — envia mensagem de teste ("✅ WIND conectada ao Telegram.")
+- `setup_hint() -> str` — instruções para configurar bot (@BotFather + env vars)
+- `TelegramChannel = TelegramStub` — alias forward-compatible
+
+**ProactiveDelivery — arquitetura:**
+- Recebe `ProactiveMonitor` + `NotificationManager` no construtor
+- `run() -> int` — verifica alertas e entrega via `manager.warning()`; retorna contagem
+- `run_and_report() -> str` — entrega (se houver) e retorna texto formatado
+- `channels_active() -> list[str]` — canais disponíveis no manager
+- Integrado no `_handler_proactive` do scheduler: alertas chegam ao Telegram automaticamente
+
+**Fluxo de entrega de alertas proativos:**
+```
+WindScheduler (a cada hora)
+  → _handler_proactive()
+    → ProactiveDelivery.run()
+      → ProactiveMonitor.check_all()   ← detecta stale projects, cases, backup
+      → NotificationManager.warning()
+          → ConsoleChannel (sempre)
+          → FileChannel (data/notifications.jsonl)
+          → TelegramStub (se TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID configurados)
+```
+
+**Configuração do Telegram:**
+```powershell
+# 1. Criar bot: Telegram → @BotFather → /newbot
+# 2. Descobrir chat_id: mandar msg ao bot, consultar:
+#    https://api.telegram.org/bot<TOKEN>/getUpdates
+# 3. Configurar no Windows (permanente):
+setx TELEGRAM_BOT_TOKEN <seu-token>
+setx TELEGRAM_CHAT_ID <seu-chat-id>
+# 4. Testar:
+python src/wind.py
+/telegram-status
+/telegram Olá do WIND!
+```
+
+**Novos comandos CLI:**
+```
+/telegram-status   verifica configuração e disponibilidade do Telegram
+/telegram <msg>    envia mensagem diretamente pelo Telegram
+```
+
+**Validado (2026-11-23):**
+- 502/502 testes unitários passando (25 novos Fase 13, zero regressões) ✅
+- TelegramChannel alias idêntico a TelegramStub ✅
+- send_text: mock API → True, URLError → False, status 400 → False ✅
+- setup_hint: contém BotFather, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID ✅
+- ProactiveDelivery.run(): sem alertas = 0, com alertas → manager.warning chamado ✅
+- ProactiveDelivery.run_and_report(): sem alertas = "Nenhum", com alertas entrega ✅
+- NotificationManager: com env vars → "telegram" aparece em available_channels() ✅
+
+**Marco atingido:** WIND entrega alertas proativos via Telegram automaticamente. Quando `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` estão configurados, projetos parados, casos abertos antigos e backups vencidos chegam ao iPhone do Felipe sem ele precisar estar na tela do PC.

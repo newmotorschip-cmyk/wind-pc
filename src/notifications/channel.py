@@ -141,3 +141,40 @@ class TelegramStub(NotificationChannel):
                 return resp.status == 200
         except (URLError, OSError):
             return False
+
+    # ── convenience ──────────────────────────────────────────────────────────
+
+    def send_text(self, text: str) -> bool:
+        """Envia texto puro sem objeto Notification."""
+        if not self.is_available():
+            return False
+        url = f"https://api.telegram.org/bot{self._token}/sendMessage"
+        data = urlencode({"chat_id": self._chat_id, "text": text, "parse_mode": "HTML"})
+        req = Request(url, data=data.encode("utf-8"), method="POST")
+        try:
+            with urlopen(req, timeout=10) as resp:
+                return resp.status == 200
+        except (URLError, OSError):
+            return False
+
+    def test_send(self) -> bool:
+        """Envia mensagem de teste para verificar conectividade."""
+        return self.send_text("✅ WIND conectada ao Telegram.")
+
+    @staticmethod
+    def setup_hint() -> str:
+        return (
+            "Para ativar o Telegram:\n"
+            "1. Fale com @BotFather → crie um bot → copie o token\n"
+            "2. Envie uma mensagem ao bot\n"
+            "3. Consulte: https://api.telegram.org/bot<TOKEN>/getUpdates\n"
+            "   Copie o campo 'id' dentro de 'chat'\n"
+            "4. Configure no Windows:\n"
+            "   setx TELEGRAM_BOT_TOKEN <token>\n"
+            "   setx TELEGRAM_CHAT_ID <chat_id>"
+        )
+
+
+# Alias para Fase 13+: TelegramChannel é o nome preferido, TelegramStub mantido
+# para compatibilidade retroativa com testes e imports existentes.
+TelegramChannel = TelegramStub
